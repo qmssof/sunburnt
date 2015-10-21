@@ -844,7 +844,7 @@ class FacetRangeOptions(Options):
 
     def update(self, fields=None, **kwargs):
         assert isinstance(fields, dict)
-        self.fields = dict()
+        # self.fields = dict()
         if fields:
             self.schema.check_fields(fields.keys())
             for field, opts in fields.items():

@@ -19,6 +19,7 @@ class LuceneQuery(object):
             self._and = True
             self._or = self._not = self._pow = False
             self.boosts = []
+            self.local_params = None
         else:
             self.option_flag = original.option_flag
             self.terms = copy.copy(original.terms)
@@ -30,6 +31,7 @@ class LuceneQuery(object):
             self._not = original._not
             self._pow = original._pow
             self.boosts = copy.copy(original.boosts)
+            self.local_params = original.local_params
 
     def clone(self, **kwargs):
         q = LuceneQuery(self.schema, original=self)
@@ -39,7 +41,10 @@ class LuceneQuery(object):
 
     def options(self):
         opts = {}
-        s = unicode(self)
+        if self.option_flag == u"fq" and not self._or:
+            s = self.serialize_to_array()
+        else:
+            s = unicode(self)
         if s:
             opts[self.option_flag] = s
         return opts
@@ -157,7 +162,7 @@ class LuceneQuery(object):
             if not s:
                 mutated = True # we're dropping a subquery
                 continue # don't append
-            if (s._and and obj._and) or (s._or and obj._or):
+            if ((s._and and obj._and) or (s._or and obj._or)) and not s.local_params:
                 # then hoist the contents up
                 terms.append(s.terms)
                 phrases.append(s.phrases)
@@ -190,6 +195,57 @@ class LuceneQuery(object):
 
     def __unicode__(self):
         return self.serialize_to_unicode(level=0, op=None)
+
+    def serialize_to_array(self, level=0, op=None):
+        if not self.normalized:
+            self, _ = self.normalize()
+        if self.boosts:
+            # Clone and rewrite to effect the boosts.
+            newself = self.clone()
+            newself.boosts = []
+            boost_queries = [self.Q(**kwargs)**boost_score
+                             for kwargs, boost_score in self.boosts]
+            newself = newself | (newself & reduce(operator.or_, boost_queries))
+            newself, _ = newself.normalize()
+            return newself.serialize_to_array(level=level)
+        else:
+            u = [s for s in [self.serialize_term_queries(self.terms),
+                             self.serialize_term_queries(self.phrases),
+                             self.serialize_range_queries()]
+                 if s]
+            for q in self.subqueries:
+                op_ = u'OR' if self._or else u'AND'
+                if q.local_params and op_ == "AND":
+                    lp = q.local_params
+                    q.local_params = None
+                    try:
+                        if self.child_needs_parens(q):
+                            u.append(u"{0}({1})".format(lp,q.serialize_to_unicode(level=level+1, op=op_)))
+                        else:
+                            u.append(u"{0}{1}".format(lp,q.serialize_to_unicode(level=level+1, op=op_)))
+                    finally:
+                        q.local_params = lp
+                else:
+                    if self.child_needs_parens(q):
+                        u.append(u"(%s)"%q.serialize_to_unicode(level=level+1, op=op_))
+                    else:
+                        u.append(u"%s"%q.serialize_to_unicode(level=level+1, op=op_))
+
+            if self._and:
+                return u
+            elif self._or:
+                return u' OR '.join(u)
+            elif self._not:
+                assert len(u) == 1
+                if level == 0 or (level == 1 and op == "AND"):
+                    return u'NOT %s'%u[0]
+                else:
+                    return u'(*:* AND NOT %s)'%u[0]
+            elif self._pow is not False:
+                assert len(u) == 1
+                return u"%s^%s"%(u[0], self._pow)
+            else:
+                raise ValueError
 
     def serialize_to_unicode(self, level=0, op=None):
         if not self.normalized:

@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-
+import re
 import math
 import operator
 import uuid
@@ -509,7 +509,13 @@ class SolrSchema(object):
                     self.dynamic_field_cache[name] = field
                     return field
 
+    _localparams_regex = re.compile("^\\{.*\\}")            
     def match_field(self, name):
+        # strip starting {.*} from name
+        # to allow passing localparams stuff and joins
+        if (name.startswith("{")):
+            name = self._localparams_regex.sub("", name)
+            print "got solr name: {0}".format(name)
         try:
             return self.fields[name]
         except KeyError:

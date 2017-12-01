@@ -590,8 +590,19 @@ class SolrUpdate(object):
         if not hasattr(values, "__iter__"):
             values = [values]
         field_values = [self.schema.field_from_user_data(name, value) for value in values]
-        return [self.FIELD({'name':name}, field_value.to_solr())
-            for field_value in field_values]
+        def _convert(name, field_value):
+            try:
+                return self.FIELD({'name':name}, field_value.to_solr())
+            except ValueError as e:
+                print "Error for field: {1}: {0}".format(e, name)
+                val = field_value.to_solr()
+                val = u''.join([c for c in val if ord(c)>=0x20 or ord(c) in (0xA, 0xD, 0x9)])
+                return self.FIELD({"name":name}, val)
+                print field_value
+                print values
+                raise
+
+        return [ _convert(name, field_value) for field_value in field_values]
 
     def doc(self, doc):
         missing_fields = self.schema.missing_fields(doc.keys())

@@ -353,6 +353,9 @@ class LuceneQuery(object):
         for k, v in kwargs.items():
             try:
                 field_name, rel = k.split("__")
+                if rel and len(rel) == 1:
+                    rel = "eq"
+                    field_name = k
             except ValueError:
                 field_name, rel = k, 'eq'
             field = self.schema.match_field(field_name)

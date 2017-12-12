@@ -515,7 +515,6 @@ class SolrSchema(object):
         # to allow passing localparams stuff and joins
         if (name.startswith("{")):
             name = self._localparams_regex.sub("", name)
-            print "got solr name: {0}".format(name)
         try:
             return self.fields[name]
         except KeyError:
